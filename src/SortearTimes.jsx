@@ -666,8 +666,8 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
   const [players, setPlayers] = useState(() => {
     // Cloud-configured deployments always load from the shared bin; avoid seeding
     // a new device with placeholder players.
-    const useCloud = !!(import.meta.env.VITE_ROSTER_URL && import.meta.env.VITE_ROSTER_KEY);
-    if (!useCloud) {
+    const cloudConfigured = !!import.meta.env.VITE_ROSTER_URL || import.meta.env.PROD;
+    if (!cloudConfigured) {
       const saved = localStorage.getItem('sigafut_pelada_players_v2');
       if (saved) {
         try {
@@ -680,18 +680,21 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
     return [];
   });
 
-  const CLOUD_URL = import.meta.env.VITE_ROSTER_URL; // e.g. https://api.jsonbin.io/v3/b/<BIN_ID>
-  const CLOUD_KEY = import.meta.env.VITE_ROSTER_KEY; // e.g. $2a$...
+  const CLOUD_URL = import.meta.env.VITE_ROSTER_URL || '/api/bin'; // direct or serverless proxy
+  const CLOUD_KEY = import.meta.env.VITE_ROSTER_KEY; // only needed for direct mode
   const loadedCloud = useRef(false);
 
   // On mount: if a cloud roster is configured, load it instead of local/default players
   useEffect(() => {
-    if (!CLOUD_URL || !CLOUD_KEY) return;
+    if (!CLOUD_URL) return;
     (async () => {
       try {
-        const res = await fetch(`${CLOUD_URL}/latest`, {
-          headers: { 'X-Master-Key': CLOUD_KEY, 'X-Bin-Meta': 'false' },
-        });
+        const headers = {};
+        if (CLOUD_KEY) {
+          headers['X-Master-Key'] = CLOUD_KEY;
+          headers['X-Bin-Meta'] = 'false';
+        }
+        const res = await fetch(CLOUD_KEY ? `${CLOUD_URL}/latest` : CLOUD_URL, { headers });
         if (!res.ok) { loadedCloud.current = true; return; }
         const data = await res.json();
         const list = Array.isArray(data) ? data : data.record || data.players;
@@ -736,13 +739,16 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
   const cloudSaveTimer = useRef(null);
   useEffect(() => {
     localStorage.setItem('sigafut_pelada_players_v2', JSON.stringify(players));
-    if (!CLOUD_URL || !CLOUD_KEY) return;
+    if (!CLOUD_URL) return;
     if (!loadedCloud.current) return; // wait for the initial load before pushing
     if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
     cloudSaveTimer.current = setTimeout(() => {
+      const headers = {};
+      if (CLOUD_KEY) headers['X-Master-Key'] = CLOUD_KEY;
+      headers['Content-Type'] = 'application/json';
       fetch(CLOUD_URL, {
         method: 'PUT',
-        headers: { 'X-Master-Key': CLOUD_KEY, 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(players),
       }).catch(() => {});
     }, 800);
