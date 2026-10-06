@@ -1,4 +1,4 @@
-﻿/* â”€â”€â”€â”€â”€ SortearTimes.css â€” Sigafut FIFA Team Divider â”€â”€â”€â”€â”€ */
+/* ───── SortearTimes.css — Sigafut FIFA Team Divider ───── */
 
 :root {
   --fifa-gold-gradient: linear-gradient(135deg, #f7d070 0%, #c9933b 50%, #8c5b18 100%);
@@ -350,7 +350,7 @@
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
 }
 
-/* â”€â”€â”€ Star Rating Form Grid â”€â”€â”€ */
+/* ─── Star Rating Form Grid ─── */
 .star-form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -387,7 +387,7 @@
   color: #f7d070;
 }
 
-/* â”€â”€â”€ Star Rating Component â”€â”€â”€ */
+/* ─── Star Rating Component ─── */
 .star-rating {
   display: flex;
   gap: 4px;
@@ -519,6 +519,7 @@
 
 .player-sub-tags {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   font-size: 0.72rem;
   color: #94a3b8;
@@ -530,11 +531,15 @@
   border-radius: 4px;
   color: #cbd5e1;
   font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tag-weight {
   color: #34d399;
   font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tag-pace {
@@ -576,7 +581,7 @@
   color: #3b82f6;
 }
 
-/* â”€â”€â”€ Edit Modal â”€â”€â”€ */
+/* ─── Edit Modal ─── */
 .edit-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -635,9 +640,9 @@
   }
 }
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ─────────────────────────────────────────────────────────────
    FIFA EA SPORTS ULTIMATE TEAM CARDS & MATCHUP PRESENTATION
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+───────────────────────────────────────────────────────────── */
 
 .fifa-match-container {
   display: flex;
@@ -1019,9 +1024,9 @@
   font-size: 0.9rem;
 }
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-   ðŸŽ¬ FIFA SHOWDOWN CINEMATIC OVERLAY
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─────────────────────────────────────────────────────────────
+   🎬 FIFA SHOWDOWN CINEMATIC OVERLAY
+───────────────────────────────────────────────────────────── */
 
 .showdown-overlay {
   position: fixed;
@@ -1071,7 +1076,7 @@
   transform: scale(1.1);
 }
 
-/* â”€â”€ INTRO Phase â”€â”€ */
+/* ── INTRO Phase ── */
 .showdown-intro {
   z-index: 10;
   display: flex;
@@ -1142,7 +1147,7 @@
   100% { background-position: 200% 0; }
 }
 
-/* â”€â”€ VERSUS Phase â”€â”€ */
+/* ── VERSUS Phase ── */
 .showdown-versus {
   z-index: 10;
   display: flex;
@@ -1245,7 +1250,7 @@
   100% { transform: scale(1); opacity: 1; }
 }
 
-/* â”€â”€ REVEAL Phase â”€â”€ */
+/* ── REVEAL Phase ── */
 .showdown-reveal-stage {
   z-index: 10;
   position: relative;
@@ -1358,7 +1363,7 @@
   gap: 10px;
 }
 
-/* â”€â”€ Individual Revealed Card â”€â”€ */
+/* ── Individual Revealed Card ── */
 .showdown-card {
   display: flex;
   align-items: center;
