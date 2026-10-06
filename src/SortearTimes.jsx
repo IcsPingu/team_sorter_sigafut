@@ -664,21 +664,27 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
 
   // Roster persistence (localStorage by default, shared cloud roster if configured)
   const [players, setPlayers] = useState(() => {
-    const saved = localStorage.getItem('sigafut_pelada_players_v2');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Normalize legacy rosters: overall is always derived from the other stats
-        return parsed.map(p => ({ ...p, overall: computeOverall(p) }));
-      } catch (e) {}
+    // Cloud-configured deployments always load from the shared bin; avoid seeding
+    // a new device with placeholder players.
+    const useCloud = !!(import.meta.env.VITE_ROSTER_URL && import.meta.env.VITE_ROSTER_KEY);
+    if (!useCloud) {
+      const saved = localStorage.getItem('sigafut_pelada_players_v2');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          return parsed.map(p => ({ ...p, overall: computeOverall(p) }));
+        } catch (e) {}
+      }
+      return DEFAULT_PELADA_PLAYERS.map(p => ({ ...p, overall: computeOverall(p) }));
     }
-    return DEFAULT_PELADA_PLAYERS.map(p => ({ ...p, overall: computeOverall(p) }));
+    return [];
   });
 
   const CLOUD_URL = import.meta.env.VITE_ROSTER_URL; // e.g. https://api.jsonbin.io/v3/b/<BIN_ID>
   const CLOUD_KEY = import.meta.env.VITE_ROSTER_KEY; // e.g. $2a$...
+  const loadedCloud = useRef(false);
 
-  // On mount: if a cloud roster is configured, load it
+  // On mount: if a cloud roster is configured, load it instead of local/default players
   useEffect(() => {
     if (!CLOUD_URL || !CLOUD_KEY) return;
     (async () => {
@@ -686,13 +692,16 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
         const res = await fetch(`${CLOUD_URL}/latest`, {
           headers: { 'X-Master-Key': CLOUD_KEY, 'X-Bin-Meta': 'false' },
         });
-        if (!res.ok) return;
+        if (!res.ok) { loadedCloud.current = true; return; }
         const data = await res.json();
         const list = Array.isArray(data) ? data : data.record || data.players;
-        if (Array.isArray(list) && list.length > 0) {
+        if (Array.isArray(list)) {
           setPlayers(list.map(p => ({ ...p, overall: computeOverall(p) })));
         }
-      } catch (e) {}
+        loadedCloud.current = true;
+      } catch (e) {
+        loadedCloud.current = true;
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -728,6 +737,7 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
   useEffect(() => {
     localStorage.setItem('sigafut_pelada_players_v2', JSON.stringify(players));
     if (!CLOUD_URL || !CLOUD_KEY) return;
+    if (!loadedCloud.current) return; // wait for the initial load before pushing
     if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
     cloudSaveTimer.current = setTimeout(() => {
       fetch(CLOUD_URL, {
