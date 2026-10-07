@@ -169,13 +169,22 @@ const BALANCE_FOCUS = {
   weight:   { overall: 0.5, skills: 0.3, movement: 0.5, weight: 3.0 },
 };
 
-function sortTeamsBalanced(players, numTeams = 2, focus = 'all') {
+function sortTeamsBalanced(players, teamSize = 6, focus = 'all') {
   if (!players || players.length === 0) return [];
   const focusWeights = BALANCE_FOCUS[focus] || BALANCE_FOCUS.all;
 
-  // Separate Goleiros (GK) from field players
-  const gks = players.filter(p => p.pos === 'GK').sort((a, b) => b.overall - a.overall);
-  const fieldPlayers = players.filter(p => p.pos !== 'GK');
+  // Only players marked as present today line up for the draw
+  const active = players.filter(p => p.playing !== false);
+  if (active.length === 0) return [];
+
+  // Full-size teams of `teamSize`; the leftover people go to the reserve bench
+  const fullTeams = Math.floor(active.length / teamSize);
+  const playTeams = Math.max(2, fullTeams);
+  const assignedCount = Math.min(active.length, playTeams * teamSize);
+  const leftover = active.length - assignedCount;
+
+  const gks = active.filter(p => p.pos === 'GK').sort((a, b) => b.overall - a.overall);
+  const fieldPlayers = active.filter(p => p.pos !== 'GK');
 
   // Composite score from star ratings, weighted by the chosen balance focus
   const scorePlayer = (p) =>
@@ -190,21 +199,24 @@ function sortTeamsBalanced(players, numTeams = 2, focus = 'all') {
   const teamNames2 = ['Time Ouro ⚡', 'Time Prata 🛡️'];
   const teamNamesN = (i) => `Time ${String.fromCharCode(65 + i)}`;
 
-  const teams = Array.from({ length: numTeams }, (_, i) => ({
+  const teams = Array.from({ length: playTeams }, (_, i) => ({
     id: i + 1,
-    name: numTeams === 2 ? teamNames2[i] : teamNamesN(i),
+    name: playTeams === 2 ? teamNames2[i] : teamNamesN(i),
     theme: teamColors[i % 4],
     players: [],
   }));
 
-  // Distribute Goleiros first
+  // Distribute Goleiros first — max 1 GK per team, extras go back to the pool
+  const extraGks = [];
   gks.forEach((gk, index) => {
-    teams[index % numTeams].players.push(gk);
+    const hasGk = teams.some(t => t.players.some(p => p.pos === 'GK'));
+    if (hasGk && index >= playTeams) {
+      extraGks.push(gk);
+    } else {
+      teams[index % playTeams].players.push(gk);
+    }
   });
 
-  // Position-aware Snake Draft: each team should get a fair share of DEF/MID/FWD.
-  // A player whose main position fills a team's quota is deprioritized for that
-  // team, and altPos players are used to cover positions a team is lacking.
   const positions = ['DEF', 'MID', 'FWD'];
   const posCountPerTeam = teams.map(() => ({ DEF: 0, MID: 0, FWD: 0 }));
   const posTotals = positions.reduce((acc, pos) => {
@@ -212,7 +224,7 @@ function sortTeamsBalanced(players, numTeams = 2, focus = 'all') {
     return acc;
   }, {});
   const posQuota = positions.reduce((acc, pos) => {
-    acc[pos] = Math.max(1, Math.ceil(posTotals[pos] / numTeams));
+    acc[pos] = Math.max(1, Math.ceil(posTotals[pos] / playTeams));
     return acc;
   }, {});
 
@@ -227,28 +239,46 @@ function sortTeamsBalanced(players, numTeams = 2, focus = 'all') {
 
   let direction = 1;
   let currentTeamIdx = 0;
-  const pool = [...sortedField];
+  const pool = [...sortedField, ...extraGks];
 
   while (pool.length > 0) {
+    if (teams.every(t => t.players.length >= teamSize)) break;
+
     // Find the best player for the current team in snake order
-    let pickIdx = pool.findIndex(p => posCountPerTeam[currentTeamIdx][p.pos] < posQuota[p.pos]);
+    let pickIdx = pool.findIndex(p =>
+      posCountPerTeam[currentTeamIdx][p.pos] < posQuota[p.pos] &&
+      teams[currentTeamIdx].players.length < teamSize
+    );
 
     // If every remaining player exceeds the quota, prefer one whose altPos fills
     // a position this team has no coverage for yet
     if (pickIdx === -1) {
       const coverage = teamCoverage(currentTeamIdx);
-      pickIdx = pool.findIndex(p => p.altPos && !coverage.has(p.altPos));
+      pickIdx = pool.findIndex(p => p.altPos && !coverage.has(p.altPos) && teams[currentTeamIdx].players.length < teamSize);
     }
-    if (pickIdx === -1) pickIdx = 0;
+    if (pickIdx === -1) {
+      pickIdx = pool.findIndex(p => teams[currentTeamIdx].players.length < teamSize);
+    }
+    if (pickIdx === -1) {
+      // Current team is already full — advance to the next one with space.
+      let guard = 0;
+      do {
+        currentTeamIdx += direction;
+        if (currentTeamIdx >= playTeams) { direction = -1; currentTeamIdx = playTeams - 1; }
+        else if (currentTeamIdx < 0) { direction = 1; currentTeamIdx = 0; }
+        guard++;
+      } while (teams[currentTeamIdx].players.length >= teamSize && guard < playTeams * 2);
+      continue;
+    }
 
     const [player] = pool.splice(pickIdx, 1);
     teams[currentTeamIdx].players.push(player);
     posCountPerTeam[currentTeamIdx][player.pos]++;
 
     currentTeamIdx += direction;
-    if (currentTeamIdx >= numTeams) {
+    if (currentTeamIdx >= playTeams) {
       direction = -1;
-      currentTeamIdx = numTeams - 1;
+      currentTeamIdx = playTeams - 1;
     } else if (currentTeamIdx < 0) {
       direction = 1;
       currentTeamIdx = 0;
@@ -269,7 +299,7 @@ function sortTeamsBalanced(players, numTeams = 2, focus = 'all') {
     const sums = teams.map(totals);
     let score = 0;
     for (const key of ['overall', 'skills', 'movement', 'weight']) {
-      const avg = sums.reduce((s, t) => s + t[key], 0) / numTeams;
+      const avg = sums.reduce((s, t) => s + t[key], 0) / playTeams;
       score += sums.reduce((s, t) => s + Math.pow(t[key] - avg, 2), 0);
     }
     return score;
@@ -277,8 +307,8 @@ function sortTeamsBalanced(players, numTeams = 2, focus = 'all') {
 
   for (let iter = 0; iter < 60; iter++) {
     let improved = false;
-    for (let i = 0; i < numTeams; i++) {
-      for (let j = i + 1; j < numTeams; j++) {
+    for (let i = 0; i < playTeams; i++) {
+      for (let j = i + 1; j < playTeams; j++) {
         for (let a = 0; a < teams[i].players.length; a++) {
           if (teams[i].players[a].pos === 'GK') continue;
           for (let b = 0; b < teams[j].players.length; b++) {
@@ -297,6 +327,16 @@ function sortTeamsBalanced(players, numTeams = 2, focus = 'all') {
       }
     }
     if (!improved) break;
+  }
+
+  // Reserve bench: players who don't fit one full team of the selected format
+  if (pool.length > 0) {
+    teams.push({
+      id: teams.length + 1,
+      name: 'Reservados 🪑',
+      theme: 'team-reserve',
+      players: [...pool],
+    });
   }
 
   // Calculate team metrics
@@ -710,7 +750,7 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
   }, []);
 
   // Config parameters
-  const [numTeams, setNumTeams] = useState(2);
+  const [teamSize, setTeamSize] = useState(6);
   const [balanceFocus, setBalanceFocus] = useState('all');
   const [soundEnabled, setSoundEnabled] = useState(true);
 
@@ -757,16 +797,16 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
   // Auto calculate teams when dependencies change
   useEffect(() => {
     if (players.length >= 2) {
-      const sorted = sortTeamsBalanced(players, numTeams, balanceFocus);
+      const sorted = sortTeamsBalanced(players, teamSize, balanceFocus);
       setDrawnTeams(sorted);
     }
-  }, [players, numTeams, balanceFocus]);
+  }, [players, teamSize, balanceFocus]);
 
   // ── Sort Button with Showdown Animation ──
   const handleSortTeams = () => {
     if (players.length < 2) return;
 
-    const result = sortTeamsBalanced(players, numTeams, balanceFocus);
+    const result = sortTeamsBalanced(players, teamSize, balanceFocus);
     setDrawnTeams(result);
     setShowShowdown(true);
   };
@@ -889,15 +929,19 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
                   </div>
 
                   <div className="config-group">
-                    <label>Quantidade de Times</label>
+                    <label>Formato da Pelada</label>
                     <div className="btn-toggle-group">
-                      {[2, 3, 4].map((num) => (
+                      {[
+                        { label: '5x5 (Fut 5)', size: 5 },
+                        { label: '6x6 (Fut 6)', size: 6 },
+                        { label: '7x7 (Fut 7)', size: 7 },
+                      ].map((fmt) => (
                         <button
-                          key={num}
-                          className={`btn-toggle ${numTeams === num ? 'active' : ''}`}
-                          onClick={() => setNumTeams(num)}
+                          key={fmt.size}
+                          className={`btn-toggle ${teamSize === fmt.size ? 'active' : ''}`}
+                          onClick={() => setTeamSize(fmt.size)}
                         >
-                          {num} Times
+                          {fmt.label}
                         </button>
                       ))}
                     </div>
@@ -1026,18 +1070,18 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
                 <div className="glass-card">
                   <div className="players-roster-header">
                     <h3>Lista de Confirmados na Pelada</h3>
-                    <span className="roster-count">Total: <strong>{players.length}</strong> Jogadores</span>
+                    <span className="roster-count">Presentes hoje: <strong>{players.filter(p => p.playing !== false).length}</strong> / {players.length}</span>
                   </div>
 
                   <div className="players-grid-view">
                     {players.map((p) => (
-                      <div key={p.id} className="player-item-card">
+                      <div key={p.id} className={`player-item-card ${p.playing === false ? 'player-absent' : ''}`}>
                         <div className="player-info-meta">
                           <div className={`player-ovr-badge ${p.overall >= 4 ? 'gold' : ''}`}>
                             {'★'.repeat(p.overall)}
                           </div>
                           <div className="player-details">
-                            <h4>{p.name}</h4>
+                            <h4>{p.name}{p.playing === false ? ' (ausente)' : ''}</h4>
                             <div className="player-sub-tags">
                               <span className="tag-pos">{p.pos}{p.altPos ? ` / ${p.altPos}` : ''}</span>
                               <span className="tag-weight">⚖{p.weight}★</span>
@@ -1048,6 +1092,13 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
                         </div>
 
                         <div className="player-item-actions">
+                          <button
+                            className={`btn-present ${p.playing !== false ? 'on' : ''}`}
+                            onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, playing: !x.playing } : x))}
+                            title="Está jogando hoje?"
+                          >
+                            {p.playing !== false ? '✓ Hoje' : '+ Hoje'}
+                          </button>
                           <button 
                             className="btn-icon-sm btn-icon-edit"
                             onClick={() => setEditingPlayer({ ...p })}
