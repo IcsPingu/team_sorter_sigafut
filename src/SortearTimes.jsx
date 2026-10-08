@@ -344,6 +344,30 @@ function sortTeamsBalanced(players, teamSize = 6, focus = 'all') {
     });
   }
 
+  // Fascounter-balance the bench: if a reserve player is not worse than a
+  // same-position starter, swap them in so the bench isn't always the weakest.
+  const reserve = teams[teams.length - 1];
+  if (reserve && reserve.name.startsWith('Reservados')) {
+    const starterTeams = teams.filter(t => t !== reserve);
+    for (let i = 0; i < reserve.players.length; i++) {
+      const rp = reserve.players[i];
+      // Find the weakest non-reserve player of the same position group
+      let weakest = null;
+      for (const t of starterTeams) {
+        for (let j = 0; j < t.players.length; j++) {
+          const p = t.players[j];
+          if (p.pos === rp.pos && p.overall <= rp.overall && (!weakest || p.overall < weakest.p.overall)) {
+            weakest = { t, j, p };
+          }
+        }
+      }
+      if (weakest) {
+        weakest.t.players[weakest.j] = rp;
+        reserve.players[i] = weakest.p;
+      }
+    }
+  }
+
   // Calculate team metrics
   return teams.map(t => {
     const avgOverall = t.players.length
