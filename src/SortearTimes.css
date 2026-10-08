@@ -1800,11 +1800,11 @@ html, body, #root {
   top: -1600px;
   left: 0;
   width: 1280px;
-  height: 720px;
+  height: 800px;
   background: #0b0e17;
   display: flex;
   flex-direction: column;
-  padding: 28px 40px;
+  padding: 24px 36px;
   box-sizing: border-box;
   pointer-events: none;
   z-index: -1;
@@ -1822,22 +1822,22 @@ html, body, #root {
 
 .share-card-body {
   display: flex;
-  gap: 24px;
+  gap: 20px;
   align-items: stretch;
   flex: 1;
   min-height: 0;
 }
 
 .share-card-pitch-wrap {
-  flex: 1.4;
+  flex: 1.5;
   min-width: 0;
 }
 
 .share-card-pitch-wrap .showdown-lineup-pitch {
-  min-height: 560px;
+  min-height: 580px;
   margin: 0;
-  padding-top: 2.5rem;
-  padding-bottom: 3.5rem;
+  padding-top: 2rem;
+  padding-bottom: 3rem;
 }
 
 .share-card-rosters {
@@ -1851,21 +1851,21 @@ html, body, #root {
 .share-team {
   background: rgba(18, 24, 38, 0.85);
   border: 1px solid rgba(247, 208, 112, 0.25);
-  border-radius: 12px;
-  padding: 10px 14px;
+  border-radius: 10px;
+  padding: 8px 12px;
 }
 
 .share-team-header {
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   font-weight: 800;
   color: #f7d070;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
 }
 
 .share-player {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: #f8fafc;
   line-height: 1.35;
