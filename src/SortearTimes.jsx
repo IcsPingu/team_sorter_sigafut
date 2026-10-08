@@ -193,9 +193,10 @@ function sortTeamsBalanced(players, teamSize = 6, focus = 'all') {
     (p.skills * focusWeights.skills) +
     (p.movement * focusWeights.movement) -
     (p.weight * focusWeights.weight * 0.3);
-  // Add per-player random jitter so each draw shuffles which strong players
-  // pair up — keeps teams competitive but never identical to last week's.
-  const jitteredScore = (p) => scorePlayer(p) + (Math.random() - 0.5) * 2.0;
+  // Each draw scales each player's score by a random factor (±25%) instead of a
+  // fixed order, so team pairings visibly change every week while total ratings
+  // remain close.
+  const jitteredScore = (p) => scorePlayer(p) * (0.75 + Math.random() * 0.5);
   const sortedField = [...fieldPlayers].sort((a, b) => jitteredScore(b) - jitteredScore(a));
 
   // Initialize teams
