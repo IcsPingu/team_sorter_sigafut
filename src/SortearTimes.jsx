@@ -3,8 +3,9 @@ import {
   Home, PlayCircle, Calendar, Users, Settings, LogOut,
   Shuffle, Shield, Zap, Scale, Sparkles, Plus, Trash2, Edit3,
   Copy, Check, Volume2, VolumeX, RefreshCw, Trophy, ArrowRight,
-  Flame, Footprints, Activity, Award, Eye, Star, X
+  Flame, Footprints, Activity, Award, Eye, Star, X, Image
 } from 'lucide-react';
+import html2canvas from 'html2canvas';
 import './SortearTimes.css';
 
 // ───── Navigation Items ─────────────────────────────────────
@@ -192,7 +193,10 @@ function sortTeamsBalanced(players, teamSize = 6, focus = 'all') {
     (p.skills * focusWeights.skills) +
     (p.movement * focusWeights.movement) -
     (p.weight * focusWeights.weight * 0.3);
-  const sortedField = [...fieldPlayers].sort((a, b) => scorePlayer(b) - scorePlayer(a));
+  // Add per-player random jitter so each draw shuffles which strong players
+  // pair up — keeps teams competitive but never identical to last week's.
+  const jitteredScore = (p) => scorePlayer(p) + (Math.random() - 0.5) * 2.0;
+  const sortedField = [...fieldPlayers].sort((a, b) => jitteredScore(b) - jitteredScore(a));
 
   // Initialize teams
   const teamColors = ['team-gold', 'team-silver', 'team-bronze', 'team-purple'];
@@ -208,12 +212,13 @@ function sortTeamsBalanced(players, teamSize = 6, focus = 'all') {
 
   // Distribute Goleiros first — max 1 GK per team, extras go back to the pool
   const extraGks = [];
+  const gkSeed = Math.floor(Math.random() * playTeams);
   gks.forEach((gk, index) => {
     const hasGk = teams.some(t => t.players.some(p => p.pos === 'GK'));
     if (hasGk && index >= playTeams) {
       extraGks.push(gk);
     } else {
-      teams[index % playTeams].players.push(gk);
+      teams[(index + gkSeed) % playTeams].players.push(gk);
     }
   });
 
@@ -874,6 +879,37 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
+  const fifaCardRef = useRef(null);
+  const handleShareImage = async () => {
+    if (!fifaCardRef.current) return;
+    try {
+      const canvas = await html2canvas(fifaCardRef.current, {
+        backgroundColor: '#0b0e17',
+        scale: 2,
+      });
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const file = new File([blob], 'sigafut-times.png', { type: 'image/png' });
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'SIGAFUT - Divisão de Times',
+            text: '⚽ Times da pelada!',
+          });
+        } else {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'sigafut-times.png';
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+      }, 'image/png');
+    } catch (e) {
+      alert('Não foi possível gerar a imagem.');
+    }
+  };
+
   return (
     <div className="sorteador-container">
       {/* FIFA Showdown Overlay */}
@@ -1193,7 +1229,7 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
 
               {/* FIFA Ultimate Team Presentation */}
               {(
-                <div className="fifa-match-container">
+                <div ref={fifaCardRef} className="fifa-match-container">
                   
                   {/* Stadium Banner */}
                   <div className="fifa-stadium-banner">
@@ -1249,6 +1285,9 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
                       <button className="btn-action btn-primary-glow" onClick={handleCopyWhatsApp}>
                         {copiedLink ? <Check size={18} /> : <Copy size={18} />}
                         {copiedLink ? 'Copiado!' : 'Copiar p/ WhatsApp'}
+                      </button>
+                      <button className="btn-action btn-primary-glow" onClick={handleShareImage}>
+                        <Image size={18} /> COMPARTILHAR IMAGEM
                       </button>
                     </div>
                   </div>
