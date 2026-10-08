@@ -1759,3 +1759,9 @@ html, body, #root {
   border-color: #94a3b8;
   box-shadow: none;
 }
+
+.showdown-share-btn {
+  margin-left: 12px;
+  background: #10b981;
+  color: #0f172a;
+}

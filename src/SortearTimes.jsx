@@ -397,6 +397,37 @@ function ShowdownOverlay({ teams, onClose, soundEnabled }) {
   const canvasRef = useRef(null);
   const particlesRef = useRef([]);
   const animFrameRef = useRef(null);
+  const overlayRef = useRef(null);
+
+  const handleShareOverlayImage = async () => {
+    if (!overlayRef.current) return;
+    try {
+      const canvas = await html2canvas(overlayRef.current, {
+        backgroundColor: '#0b0e17',
+        scale: 2,
+      });
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const file = new File([blob], 'sigafut-showdown.png', { type: 'image/png' });
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'SIGAFUT - Divisão de Times',
+            text: '⚽ Times da pelada!',
+          });
+        } else {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'sigafut-showdown.png';
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+      }, 'image/png');
+    } catch (e) {
+      alert('Não foi possível gerar a imagem.');
+    }
+  };
 
   // Particle system
   useEffect(() => {
@@ -518,7 +549,7 @@ function ShowdownOverlay({ teams, onClose, soundEnabled }) {
   if (!teams || teams.length === 0) return null;
 
   return (
-    <div className="showdown-overlay">
+    <div ref={overlayRef} className="showdown-overlay">
       <canvas ref={canvasRef} className="showdown-particles" />
 
       {/* Close Button */}
@@ -664,10 +695,16 @@ function ShowdownOverlay({ teams, onClose, soundEnabled }) {
           </div>
 
           {phase === 'done' && (
-            <button className="showdown-continue-btn" onClick={onClose}>
-              <Trophy size={20} />
-              VER RESULTADO COMPLETO
-            </button>
+            <>
+              <button className="showdown-continue-btn" onClick={onClose}>
+                <Trophy size={20} />
+                VER RESULTADO COMPLETO
+              </button>
+              <button className="showdown-continue-btn showdown-share-btn" onClick={handleShareOverlayImage}>
+                <Image size={20} />
+                COMPARTILHAR SHOWDOWN
+              </button>
+            </>
           )}
         </div>
       )}
