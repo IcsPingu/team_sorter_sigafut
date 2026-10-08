@@ -388,6 +388,59 @@ function sortTeamsBalanced(players, teamSize = 6, focus = 'all') {
   });
 }
 
+// ───── Reusable read-only Pitch inside the showdown ──────────
+function PitchView({ teams, revealedCards, phase }) {
+  return (
+    <div className="pitch-container showdown-pitch showdown-lineup-pitch">
+      <div className="pitch-line-center" />
+      <div className="pitch-circle-center" />
+      <div className="pitch-penalty pitch-penalty-top" />
+      <div className="pitch-penalty pitch-penalty-bottom" />
+
+      {teams.slice(0, 2).map((team, tIdx) => {
+        const visible = (p) =>
+          revealedCards.some(c => c && c.player && c.player.id === p.id) || phase === 'done';
+        const gk = team.players.filter(p => p.pos === 'GK' && visible(p));
+        const def = team.players.filter(p => p.pos === 'DEF' && visible(p));
+        const mid = team.players.filter(p => p.pos === 'MID' && visible(p));
+        const fwd = team.players.filter(p => p.pos === 'FWD' && visible(p));
+
+        const renderPlayer = (p) => (
+          <div key={p.id} className="pitch-player-node showdown-pitch-node">
+            <div
+              className="pitch-player-avatar"
+              style={tIdx === 0 ? { background: '#f7d070' } : { background: '#3b82f6', color: '#fff' }}
+            >
+              {'★'.repeat(p.overall).substring(0, 3)}
+            </div>
+            <span className="pitch-player-name">{p.name.split(' ')[0]}</span>
+            <span className="showdown-pitch-stats">
+              ⚖{p.weight}★ 💨{p.movement}★ ⚡{p.skills}★
+            </span>
+          </div>
+        );
+
+        const row = (players, key) =>
+          players.length > 0 ? (
+            <div key={key} className={`lineup-row lineup-row-${key}`}>
+              {players.map(renderPlayer)}
+            </div>
+          ) : null;
+
+        const rows = tIdx === 0
+          ? [row(gk, 'gk'), row(def, 'def'), row(mid, 'mid'), row(fwd, 'fwd')]
+          : [row(fwd, 'fwd'), row(mid, 'mid'), row(def, 'def'), row(gk, 'gk')];
+
+        return (
+          <div key={team.id} className={`lineup-half ${tIdx === 0 ? 'lineup-half-top' : 'lineup-half-bottom'}`}>
+            {rows}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ───── Showdown Overlay Component ────────────────────────────
 function ShowdownOverlay({ teams, onClose, soundEnabled }) {
   const [phase, setPhase] = useState('intro'); // intro -> versus -> reveal -> done
@@ -398,11 +451,14 @@ function ShowdownOverlay({ teams, onClose, soundEnabled }) {
   const particlesRef = useRef([]);
   const animFrameRef = useRef(null);
   const overlayRef = useRef(null);
+  const shareRef = useRef(null);
 
   const handleShareOverlayImage = async () => {
-    if (!overlayRef.current) return;
+    if (!shareRef.current) return;
     try {
-      const canvas = await html2canvas(overlayRef.current, {
+      const canvas = await html2canvas(shareRef.current, {
+        width: 1280,
+        height: 720,
         backgroundColor: '#0b0e17',
         scale: 2,
       });
@@ -550,6 +606,27 @@ function ShowdownOverlay({ teams, onClose, soundEnabled }) {
 
   return (
     <div ref={overlayRef} className="showdown-overlay">
+      {/* Hidden fixed-format card used for image export */}
+      <div ref={shareRef} className="share-card-stage" aria-hidden="true">
+        <h2 className="share-card-title">⚡ TIMES DEFINIDOS! ⚡</h2>
+        <div className="share-card-body">
+          <div className="share-card-pitch-wrap">
+            <PitchView teams={teams} revealedCards={revealedCards} phase={'done'} />
+          </div>
+          <div className="share-card-rosters">
+            {teams.map((team) => (
+              <div className="share-team" key={team.id}>
+                <div className="share-team-header">{team.name}</div>
+                {team.players.map((p) => (
+                  <div className="share-player" key={p.id}>
+                    {p.name} <span>({p.pos}{p.altPos ? `/${p.altPos}` : ''})</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
       <canvas ref={canvasRef} className="showdown-particles" />
 
       {/* Close Button */}
@@ -604,54 +681,7 @@ function ShowdownOverlay({ teams, onClose, soundEnabled }) {
 
           <div className="showdown-reveal-body">
           {/* Tactical Lineup Pitch — players positioned by their roles */}
-          <div className="pitch-container showdown-pitch showdown-lineup-pitch">
-            <div className="pitch-line-center" />
-            <div className="pitch-circle-center" />
-            <div className="pitch-penalty pitch-penalty-top" />
-            <div className="pitch-penalty pitch-penalty-bottom" />
-
-            {teams.slice(0, 2).map((team, tIdx) => {
-              const visible = (p) =>
-                revealedCards.some(c => c && c.player && c.player.id === p.id) || phase === 'done';
-              const gk = team.players.filter(p => p.pos === 'GK' && visible(p));
-              const def = team.players.filter(p => p.pos === 'DEF' && visible(p));
-              const mid = team.players.filter(p => p.pos === 'MID' && visible(p));
-              const fwd = team.players.filter(p => p.pos === 'FWD' && visible(p));
-
-              const renderPlayer = (p) => (
-                <div key={p.id} className="pitch-player-node showdown-pitch-node">
-                  <div
-                    className="pitch-player-avatar"
-                    style={tIdx === 0 ? { background: '#f7d070' } : { background: '#3b82f6', color: '#fff' }}
-                  >
-                    {'★'.repeat(p.overall).substring(0, 3)}
-                  </div>
-                  <span className="pitch-player-name">{p.name.split(' ')[0]}</span>
-                  <span className="showdown-pitch-stats">
-                    ⚖{p.weight}★ 💨{p.movement}★ ⚡{p.skills}★
-                  </span>
-                </div>
-              );
-
-              const row = (players, key) =>
-                players.length > 0 ? (
-                  <div key={key} className={`lineup-row lineup-row-${key}`}>
-                    {players.map(renderPlayer)}
-                  </div>
-                ) : null;
-
-              // Top team defends the top goal (GK at the back); bottom team defends the bottom.
-              const rows = tIdx === 0
-                ? [row(gk, 'gk'), row(def, 'def'), row(mid, 'mid'), row(fwd, 'fwd')]
-                : [row(fwd, 'fwd'), row(mid, 'mid'), row(def, 'def'), row(gk, 'gk')];
-
-              return (
-                <div key={team.id} className={`lineup-half ${tIdx === 0 ? 'lineup-half-top' : 'lineup-half-bottom'}`}>
-                  {rows}
-                </div>
-              );
-            })}
-          </div>
+          <PitchView teams={teams} revealedCards={revealedCards} phase={phase} />
 
           <div className="showdown-teams-lanes">
             {teams.map((team, tIdx) => (
