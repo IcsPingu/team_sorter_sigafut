@@ -1005,12 +1005,14 @@ html, body, #root {
 }
 
 .pitch-player-name {
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(0, 0, 0, 0.92);
   color: #fff;
   padding: 2px 8px;
   border-radius: 10px;
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: 800;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
 /* WhatsApp Share */
@@ -1613,12 +1615,13 @@ html, body, #root {
 }
 
 .showdown-pitch-stats {
-  background: rgba(0, 0, 0, 0.75);
-  color: #fde68a;
+  background: rgba(0, 0, 0, 0.92);
+  color: #fff3c4;
   font-size: 0.6rem;
-  font-weight: 800;
+  font-weight: 900;
   padding: 2px 6px;
   border-radius: 8px;
+  border: 1px solid rgba(255, 219, 128, 0.5);
   letter-spacing: -0.5px;
 }
 
@@ -1772,14 +1775,14 @@ html, body, #root {
   left: 0;
   width: 1280px;
   height: 720px;
-  background: #161b2e;
+  background: #0b0e17;
   display: flex;
   flex-direction: column;
   padding: 28px 40px;
   box-sizing: border-box;
   pointer-events: none;
   z-index: -1;
-  filter: brightness(1.25) saturate(1.15);
+  
 }
 
 .share-card-title {
