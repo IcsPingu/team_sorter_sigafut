@@ -405,20 +405,43 @@ function PitchView({ teams, revealedCards, phase }) {
         const mid = team.players.filter(p => p.pos === 'MID' && visible(p));
         const fwd = team.players.filter(p => p.pos === 'FWD' && visible(p));
 
-        const renderPlayer = (p) => (
-          <div key={p.id} className="pitch-player-node showdown-pitch-node">
-            <div
-              className="pitch-player-avatar"
-              style={tIdx === 0 ? { background: '#f7d070' } : { background: '#3b82f6', color: '#fff' }}
-            >
-              {'★'.repeat(p.overall).substring(0, 3)}
+        const renderPlayer = (p) => {
+          const starColor = getStarColor(p.overall);
+          const teamColor = tIdx === 0 ? '#f7d070' : '#3b82f6';
+          return (
+            <div key={p.id} className="pitch-player-node showdown-pitch-node">
+              <div className="pitch-player-avatar-wrapper">
+                <div
+                  className="pitch-player-avatar"
+                  style={{
+                    background: teamColor,
+                    borderColor: starColor,
+                    boxShadow: `0 0 12px ${starColor}80`
+                  }}
+                >
+                  <span className="pitch-player-stars" style={{ color: starColor }}>
+                    {'★'.repeat(p.overall)}
+                  </span>
+                </div>
+              </div>
+              <span className="pitch-player-name">{p.name.split(' ')[0]}</span>
+              <span className="showdown-pitch-stats">
+                ⚖{p.weight}★ 💨{p.movement}★ ⚡{p.skills}★
+              </span>
             </div>
-            <span className="pitch-player-name">{p.name.split(' ')[0]}</span>
-            <span className="showdown-pitch-stats">
-              ⚖{p.weight}★ 💨{p.movement}★ ⚡{p.skills}★
-            </span>
-          </div>
-        );
+          );
+        };
+
+        function getStarColor(overall) {
+          switch (overall) {
+            case 1: return '#cd7f32'; // bronze
+            case 2: return '#c0c0c0'; // silver
+            case 3: return '#ffd700'; // gold
+            case 4: return '#e5e4e2'; // platinum
+            case 5: return '#b9f2ff'; // diamond
+            default: return '#f7d070';
+          }
+        }
 
         const row = (players, key) =>
           players.length > 0 ? (

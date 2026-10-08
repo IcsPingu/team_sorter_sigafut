@@ -941,6 +941,8 @@ html, body, #root {
   background: linear-gradient(180deg, #16a34a 0%, #15803d 100%);
   border-radius: 20px;
   padding: 1.5rem;
+  padding-top: 2.5rem;
+  padding-bottom: 2.5rem;
   position: relative;
   border: 4px solid #ffffff;
   box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.4), 0 12px 30px rgba(0, 0, 0, 0.5);
@@ -988,20 +990,40 @@ html, body, #root {
   gap: 4px;
 }
 
+.pitch-player-avatar-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 .pitch-player-avatar {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   background: #f7d070;
   color: #0f172a;
   font-weight: 900;
-  font-size: 0.6rem;
+  font-size: 0.55rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 12px rgba(247, 208, 112, 0.8);
-  border: 2px solid #fff;
+  box-shadow: 0 0 16px currentColor;
+  border: 3px solid currentColor;
   letter-spacing: -1px;
+  transition: transform 0.2s ease;
+}
+
+.pitch-player-avatar:hover {
+  transform: scale(1.1);
+}
+
+.pitch-player-stars {
+  font-size: 0.5rem;
+  line-height: 1;
+  font-weight: 900;
+  text-shadow: 0 0 4px rgba(0,0,0,0.8), 0 0 8px currentColor;
+  filter: drop-shadow(0 0 2px rgba(0,0,0,0.9));
 }
 
 .pitch-player-name {
@@ -1652,6 +1674,8 @@ html, body, #root {
   flex-direction: column;
   min-height: 80vh;
   overflow: visible;
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
 }
 
 .lineup-half {
@@ -1810,6 +1834,8 @@ html, body, #root {
 .share-card-pitch-wrap .showdown-lineup-pitch {
   min-height: 560px;
   margin: 0;
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
 }
 
 .share-card-rosters {
