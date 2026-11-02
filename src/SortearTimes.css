@@ -957,7 +957,9 @@ html, body, #root {
 
 /* FUT Pitch Tactical View */
 .pitch-container {
-  background: linear-gradient(180deg, #16a34a 0%, #15803d 100%);
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0px, rgba(255, 255, 255, 0.04) 90px, transparent 90px, transparent 180px),
+    linear-gradient(180deg, #16a34a 0%, #15803d 100%);
   border-radius: 20px;
   padding: 1.5rem;
   padding-top: 3rem;
@@ -1634,6 +1636,25 @@ html, body, #root {
   margin: 1rem 0 2rem 0;
   max-height: 420px;
   overflow-y: auto;
+}
+
+/* La Liga-style stadium atmosphere: floodlight glow + stands wall */
+.showdown-pitch::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(ellipse 90% 38% at 50% -6%, rgba(253, 224, 71, 0.16), transparent 70%),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.55) 0%, rgba(2, 6, 23, 0.06) 26%, rgba(2, 6, 23, 0.06) 74%, rgba(2, 6, 23, 0.55) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.showdown-pitch .pitch-circle-center {
+  width: 105px;
+  height: 105px;
+  border-width: 3px;
 }
 
 .showdown-pitch-node {
