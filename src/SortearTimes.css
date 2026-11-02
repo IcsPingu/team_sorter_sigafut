@@ -361,6 +361,11 @@ html, body, #root {
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
 }
 
+.input-field .btn-toggle {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
 /* ─── Star Rating Form Grid ─── */
 .star-form-grid {
   display: grid;
