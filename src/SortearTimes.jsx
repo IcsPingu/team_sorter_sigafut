@@ -22,9 +22,29 @@ const NAV_ITEMS = [
 // Weighting: skills count most, then movement, then physical ease.
 // A heavier (obese) player hurts the rating, so weight counts negatively:
 // (6 - weight) converts "5 stars = heaviest" into "5 = worst" for the rating.
+function starValue(value, fallback = 3) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(1, Math.min(5, n)) : fallback;
+}
+
 function computeOverall(p) {
-  const raw = (p.skills * 0.5) + (p.movement * 0.3) + ((6 - p.weight) * 0.2);
+  const raw = (starValue(p.skills) * 0.5) + (starValue(p.movement) * 0.3) + ((6 - starValue(p.weight)) * 0.2);
   return Math.max(1, Math.min(5, Math.round(raw)));
+}
+
+// Guests are players we don't know enough about. Their stats are placeholders
+// and are excluded from the draw, so they always start at a neutral overall.
+function normalizePlayer(p) {
+  const guest = !!p.guest;
+  return {
+    ...p,
+    guest,
+    invitedBy: guest ? (p.invitedBy || '') : '',
+    weight: starValue(p.weight),
+    movement: starValue(p.movement),
+    skills: starValue(p.skills),
+    overall: guest ? 3 : computeOverall(p),
+  };
 }
 
 const DEFAULT_PELADA_PLAYERS = [
@@ -178,14 +198,17 @@ function sortTeamsBalanced(players, teamSize = 6, focus = 'all') {
   const active = players.filter(p => p.playing !== false);
   if (active.length === 0) return [];
 
+  // Guests do not have reliable ratings. They are placed after the rated teams
+  // are balanced and never take part in the score/optimization math.
+  const guests = active.filter(p => p.guest);
+  const rated = active.filter(p => !p.guest);
+
   // Full-size teams of `teamSize`; the leftover people go to the reserve bench
   const fullTeams = Math.floor(active.length / teamSize);
   const playTeams = Math.max(2, fullTeams);
-  const assignedCount = Math.min(active.length, playTeams * teamSize);
-  const leftover = active.length - assignedCount;
 
-  const gks = active.filter(p => p.pos === 'GK').sort((a, b) => b.overall - a.overall);
-  const fieldPlayers = active.filter(p => p.pos !== 'GK');
+  const gks = rated.filter(p => p.pos === 'GK').sort((a, b) => b.overall - a.overall);
+  const fieldPlayers = rated.filter(p => p.pos !== 'GK');
 
   // Composite score from star ratings, weighted by the chosen balance focus
   const scorePlayer = (p) =>
@@ -335,28 +358,148 @@ function sortTeamsBalanced(players, teamSize = 6, focus = 'all') {
     if (!improved) break;
   }
 
-  // Reserve bench: players who don't fit one full team of the selected format
-  if (pool.length > 0) {
+  // ── Guests: placed after the rated teams are balanced ──
+  // Rule: a guest joins the team of the person who invited them. If there is
+  // no inviter, they fill the LAST team that still needs their position. They
+  // never enter the score/imbalance math above, and team averages below ignore
+  // their placeholder stats.
+  const benchPool = [...pool];
+  const positionKeys = ['GK', 'DEF', 'MID', 'FWD'];
+  const teamPosCounts = teams.map(team => {
+    const counts = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+    team.players.forEach(p => { counts[p.pos] = (counts[p.pos] || 0) + 1; });
+    return counts;
+  });
+
+  const ratedPosTotals = positionKeys.reduce((acc, pos) => {
+    acc[pos] = rated.filter(p => p.pos === pos).length;
+    return acc;
+  }, {});
+  const guestPosQuota = positionKeys.reduce((acc, pos) => {
+    acc[pos] = Math.max(1, Math.ceil(ratedPosTotals[pos] / playTeams));
+    return acc;
+  }, {});
+
+  // Protect anyone who invited a guest so the pair is never split by a swap.
+  const protectedInviterIds = new Set(guests.map(g => g.invitedBy).filter(Boolean));
+
+  const teamHasGk = (teamIdx) => teamPosCounts[teamIdx].GK > 0;
+  const teamNeedsPosition = (teamIdx, pos) => {
+    if (pos === 'GK') return !teamHasGk(teamIdx);
+    return (teamPosCounts[teamIdx][pos] || 0) < guestPosQuota[pos];
+  };
+
+  const addGuestToTeam = (teamIdx, guest) => {
+    teams[teamIdx].players.push(guest);
+    teamPosCounts[teamIdx][guest.pos] = (teamPosCounts[teamIdx][guest.pos] || 0) + 1;
+  };
+
+  const bumpWeakestFromTeam = (teamIdx, guest) => {
+    // Never bump a GK (keeps the max-1-GK rule) and never bump an inviter.
+    const candidates = teams[teamIdx].players
+      .map((p, index) => ({ p, index }))
+      .filter(({ p }) => !p.guest && p.pos !== 'GK')
+      .filter(({ p }) => !protectedInviterIds.has(p.id) && p.id !== guest.invitedBy);
+    if (candidates.length === 0) return false;
+
+    const samePosition = candidates.filter(({ p }) => p.pos === guest.pos);
+    const choices = samePosition.length ? samePosition : candidates;
+    choices.sort((a, b) => a.p.overall - b.p.overall);
+    const chosen = choices[0];
+    teams[teamIdx].players.splice(chosen.index, 1);
+    teamPosCounts[teamIdx][chosen.p.pos] = Math.max(0, (teamPosCounts[teamIdx][chosen.p.pos] || 0) - 1);
+    benchPool.push(chosen.p);
+    return true;
+  };
+
+  const canAddGuest = (teamIdx, guest) =>
+    teams[teamIdx].players.length < teamSize &&
+    (guest.pos !== 'GK' || !teamHasGk(teamIdx));
+
+  const placedGuests = new Set();
+
+  // First pass: guest has an inviter already in a starting team.
+  for (const guest of guests) {
+    if (!guest.invitedBy) continue;
+    const inviterTeamIdx = teams.findIndex(t => t.players.some(p => p.id === guest.invitedBy));
+    if (inviterTeamIdx === -1) continue;
+    if (guest.pos === 'GK' && teamHasGk(inviterTeamIdx)) continue;
+    if (canAddGuest(inviterTeamIdx, guest)) {
+      addGuestToTeam(inviterTeamIdx, guest);
+      placedGuests.add(guest.id);
+    } else if (bumpWeakestFromTeam(inviterTeamIdx, guest)) {
+      addGuestToTeam(inviterTeamIdx, guest);
+      placedGuests.add(guest.id);
+    }
+  }
+
+  // If the inviter is on the bench (but present), the guest follows them there.
+  const activeIds = new Set(active.map(p => p.id));
+  const benchIds = new Set(benchPool.map(p => p.id));
+  for (const guest of guests) {
+    if (placedGuests.has(guest.id)) continue;
+    if (guest.invitedBy && activeIds.has(guest.invitedBy) && benchIds.has(guest.invitedBy)) {
+      benchPool.push(guest);
+      placedGuests.add(guest.id);
+    }
+  }
+
+  // Last pass: uninvited guests, absent inviters, or a guest who couldn't fit
+  // with their inviter. Pick the last team that still needs the position.
+  for (const guest of guests) {
+    if (placedGuests.has(guest.id)) continue;
+
+    const openTeams = [];
+    for (let i = teams.length - 1; i >= 0; i--) {
+      if (canAddGuest(i, guest)) openTeams.push(i);
+    }
+    const needed = openTeams.filter(i => teamNeedsPosition(i, guest.pos));
+    const target = (needed.length ? needed : openTeams)[0];
+    if (target !== undefined) {
+      addGuestToTeam(target, guest);
+      placedGuests.add(guest.id);
+      continue;
+    }
+
+    // All teams are full: free a slot in the last team that needs the position.
+    let bumped = false;
+    for (let i = teams.length - 1; i >= 0; i--) {
+      if (guest.pos === 'GK' && teamHasGk(i)) continue;
+      if (!teamNeedsPosition(i, guest.pos)) continue;
+      if (bumpWeakestFromTeam(i, guest)) {
+        addGuestToTeam(i, guest);
+        placedGuests.add(guest.id);
+        bumped = true;
+        break;
+      }
+    }
+    if (!bumped) benchPool.push(guest);
+  }
+
+  // Reserve bench: rated leftovers + guests who could not be placed
+  if (benchPool.length > 0) {
     teams.push({
       id: teams.length + 1,
       name: 'Reservados 🪑',
       theme: 'team-reserve',
-      players: [...pool],
+      players: [...benchPool],
     });
   }
 
-  // Fascounter-balance the bench: if a reserve player is not worse than a
+  // Counter-balance the bench: if a reserve player is not worse than a
   // same-position starter, swap them in so the bench isn't always the weakest.
+  // Guests are skipped: their placement is intentional and their stats are unknown.
   const reserve = teams[teams.length - 1];
   if (reserve && reserve.name.startsWith('Reservados')) {
     const starterTeams = teams.filter(t => t !== reserve);
     for (let i = 0; i < reserve.players.length; i++) {
       const rp = reserve.players[i];
-      // Find the weakest non-reserve player of the same position group
+      if (rp.guest) continue;
       let weakest = null;
       for (const t of starterTeams) {
         for (let j = 0; j < t.players.length; j++) {
           const p = t.players[j];
+          if (p.guest || protectedInviterIds.has(p.id)) continue;
           if (p.pos === rp.pos && p.overall <= rp.overall && (!weakest || p.overall < weakest.p.overall)) {
             weakest = { t, j, p };
           }
@@ -369,22 +512,22 @@ function sortTeamsBalanced(players, teamSize = 6, focus = 'all') {
     }
   }
 
-  // Calculate team metrics
+  // Calculate team metrics. Guests are excluded so the displayed averages reflect
+  // only the players whose ratings we actually know.
   return teams.map(t => {
-    const avgOverall = t.players.length
-      ? +(t.players.reduce((s, p) => s + p.overall, 0) / t.players.length).toFixed(1)
-      : 0;
-    const avgSkills = t.players.length
-      ? +(t.players.reduce((s, p) => s + p.skills, 0) / t.players.length).toFixed(1)
-      : 0;
-    const avgMovement = t.players.length
-      ? +(t.players.reduce((s, p) => s + p.movement, 0) / t.players.length).toFixed(1)
-      : 0;
-    const avgWeight = t.players.length
-      ? +(t.players.reduce((s, p) => s + p.weight, 0) / t.players.length).toFixed(1)
+    const ratedInTeam = t.players.filter(p => !p.guest);
+    const average = (key) => ratedInTeam.length
+      ? +(ratedInTeam.reduce((s, p) => s + p[key], 0) / ratedInTeam.length).toFixed(1)
       : 0;
 
-    return { ...t, avgOverall, avgSkills, avgMovement, avgWeight };
+    return {
+      ...t,
+      guestCount: t.players.filter(p => p.guest).length,
+      avgOverall: average('overall'),
+      avgSkills: average('skills'),
+      avgMovement: average('movement'),
+      avgWeight: average('weight'),
+    };
   });
 }
 
@@ -642,7 +785,7 @@ function ShowdownOverlay({ teams, onClose, soundEnabled }) {
                 <div className="share-team-header">{team.name}</div>
                 {team.players.map((p) => (
                   <div className="share-player" key={p.id}>
-                    {p.name} <span>({p.pos}{p.altPos ? `/${p.altPos}` : ''})</span>
+                    {p.name} {p.guest && <span className="share-guest-tag">🎟 GUEST</span>} <span>({p.pos}{p.altPos ? `/${p.altPos}` : ''})</span>
                   </div>
                 ))}
               </div>
@@ -832,10 +975,10 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          return parsed.map(p => ({ ...p, overall: computeOverall(p) }));
+          return parsed.map(normalizePlayer);
         } catch (e) {}
       }
-      return DEFAULT_PELADA_PLAYERS.map(p => ({ ...p, overall: computeOverall(p) }));
+      return DEFAULT_PELADA_PLAYERS.map(normalizePlayer);
     }
     return [];
   });
@@ -859,7 +1002,7 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
         const data = await res.json();
         const list = Array.isArray(data) ? data : data.record || data.players;
         if (Array.isArray(list)) {
-          setPlayers(list.map(p => ({ ...p, overall: computeOverall(p) })));
+          setPlayers(list.map(normalizePlayer));
         }
         loadedCloud.current = true;
       } catch (e) {
@@ -892,7 +1035,10 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
     weight: 3,
     movement: 3,
     skills: 3,
-    overall: 3
+    overall: 3,
+    guest: false,
+    invitedBy: '',
+    playing: true,
   });
 
   // Persist players (localStorage always; cloud when configured)
@@ -941,34 +1087,42 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
     e.preventDefault();
     if (!newPlayer.name.trim()) return;
 
-    const created = {
+    const created = normalizePlayer({
       ...newPlayer,
       id: Date.now().toString(),
       weight: Number(newPlayer.weight),
       movement: Number(newPlayer.movement),
       skills: Number(newPlayer.skills),
-      overall: computeOverall(newPlayer),
-    };
+      guest: !!newPlayer.guest,
+      invitedBy: newPlayer.guest ? (newPlayer.invitedBy || '') : '',
+      playing: true,
+    });
 
     setPlayers([...players, created]);
-    setNewPlayer({ name: '', pos: 'MID', altPos: '', weight: 3, movement: 3, skills: 3, overall: 3 });
+    setNewPlayer({
+      name: '', pos: 'MID', altPos: '', weight: 3, movement: 3, skills: 3, overall: 3,
+      guest: false, invitedBy: '', playing: true,
+    });
   };
 
   // Save edited player
   const handleSaveEdit = () => {
     if (!editingPlayer) return;
-    setPlayers(players.map(p => p.id === editingPlayer.id ? { ...editingPlayer, overall: computeOverall(editingPlayer) } : p));
+    const updated = normalizePlayer(editingPlayer);
+    setPlayers(players.map(p => p.id === updated.id ? updated : p));
     setEditingPlayer(null);
   };
 
   // Delete player
   const handleDeletePlayer = (id) => {
-    setPlayers(players.filter(p => p.id !== id));
+    setPlayers(players
+      .filter(p => p.id !== id)
+      .map(p => (p.guest && p.invitedBy === id ? { ...p, invitedBy: '' } : p)));
   };
 
   // Load preset roster
   const handleLoadPreset = (count) => {
-    const selected = DEFAULT_PELADA_PLAYERS.slice(0, count).map(p => ({ ...p, overall: computeOverall(p) }));
+    const selected = DEFAULT_PELADA_PLAYERS.slice(0, count).map(normalizePlayer);
     setPlayers(selected);
   };
 
@@ -977,13 +1131,19 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
     let msg = `⚽ *SIGAFUT ARENA - DRAFT DA PELADA (FIFA SHOWDOWN)* ⚽\n\n`;
     drawnTeams.forEach(t => {
       const starStr = (n) => '⭐'.repeat(n);
-      msg += `🏆 *${t.name}* (OVR Média: ${t.avgOverall}★)\n`;
+      msg += `🏆 *${t.name}* (OVR Média: ${t.avgOverall}★${t.guestCount ? ` · ${t.guestCount} guest(s)` : ''})\n`;
       t.players.forEach(p => {
-        msg += `  • [${p.pos}${p.altPos ? ` / ${p.altPos}` : ''}] ${p.name} — OVR ${starStr(p.overall)} | SKL ${starStr(p.skills)} | MOV ${starStr(p.movement)} | WGT ${starStr(p.weight)}\n`;
+        const posLabel = `[${p.pos}${p.altPos ? ` / ${p.altPos}` : ''}]`;
+        if (p.guest) {
+          const inviter = p.invitedBy ? players.find(x => x.id === p.invitedBy) : null;
+          msg += `  • ${posLabel} ${p.name} — GUEST${inviter ? ` (convidado por ${inviter.name})` : ''}\n`;
+        } else {
+          msg += `  • ${posLabel} ${p.name} — OVR ${starStr(p.overall)} | SKL ${starStr(p.skills)} | MOV ${starStr(p.movement)} | WGT ${starStr(p.weight)}\n`;
+        }
       });
       msg += `\n`;
     });
-    msg += `🚀 Sorteado pelo SIGAFUT Arena Manager!`;
+    msg += `🎟 GUEST = sem avaliação, não afeta o equilíbrio.\n🚀 Sorteado pelo SIGAFUT Arena Manager!`;
     return msg;
   };
 
@@ -1024,6 +1184,11 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
       alert('Não foi possível gerar a imagem.');
     }
   };
+
+  const ratedPlayers = players.filter(p => !p.guest);
+  const guestPlayers = players.filter(p => p.guest);
+  const presentCount = players.filter(p => p.playing !== false).length;
+  const playerName = (id) => players.find(p => p.id === id)?.name || '';
 
   return (
     <div className="sorteador-container">
@@ -1145,6 +1310,29 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
                       />
                     </div>
 
+                    <div className="input-field" style={{ marginBottom: '10px' }}>
+                      <label>🎟 Convidado? (sem informação de jogo)</label>
+                      <button
+                        type="button"
+                        className={`btn-toggle ${newPlayer.guest ? 'active' : ''}`}
+                        onClick={() => setNewPlayer({ ...newPlayer, guest: !newPlayer.guest, invitedBy: '' })}
+                      >
+                        {newPlayer.guest ? '🎟 Sim, é um convidado' : '🎟 Convidado (sem avaliação)'}
+                      </button>
+                      {newPlayer.guest && (
+                        <select
+                          value={newPlayer.invitedBy || ''}
+                          onChange={(e) => setNewPlayer({ ...newPlayer, invitedBy: e.target.value })}
+                          style={{ marginTop: '8px' }}
+                        >
+                          <option value="">Sem convite — vai para o último time que precisar</option>
+                          {players.filter(p => !p.guest).map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
                     <div className="form-row">
                       <div className="input-field">
                         <label>Posição Principal</label>
@@ -1173,39 +1361,45 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
                       </div>
                     </div>
 
-                    <div className="star-form-grid">
-                      <div className="star-form-item">
-                        <label><Scale size={14} /> Peso (Weight)</label>
-                        <StarRating
-                          value={newPlayer.weight}
-                          onChange={(v) => setNewPlayer({ ...newPlayer, weight: v })}
-                        />
+                    {!newPlayer.guest && (
+                      <div className="star-form-grid">
+                        <div className="star-form-item">
+                          <label><Scale size={14} /> Peso (Weight)</label>
+                          <StarRating
+                            value={newPlayer.weight}
+                            onChange={(v) => setNewPlayer({ ...newPlayer, weight: v })}
+                          />
+                        </div>
+                        <div className="star-form-item">
+                          <label><Zap size={14} /> Movimentação</label>
+                          <StarRating
+                            value={newPlayer.movement}
+                            onChange={(v) => setNewPlayer({ ...newPlayer, movement: v })}
+                          />
+                        </div>
+                        <div className="star-form-item">
+                          <label><Activity size={14} /> Habilidade (Skills)</label>
+                          <StarRating
+                            value={newPlayer.skills}
+                            onChange={(v) => setNewPlayer({ ...newPlayer, skills: v })}
+                          />
+                        </div>
+                        <div className="star-form-item star-form-overall">
+                          <label><Star size={14} /> Overall (calculado)</label>
+                          <StarRating
+                            value={computeOverall(newPlayer)}
+                            readonly
+                            size={22}
+                          />
+                        </div>
                       </div>
-                      <div className="star-form-item">
-                        <label><Zap size={14} /> Movimentação</label>
-                        <StarRating
-                          value={newPlayer.movement}
-                          onChange={(v) => setNewPlayer({ ...newPlayer, movement: v })}
-                        />
-                      </div>
-                      <div className="star-form-item">
-                        <label><Activity size={14} /> Habilidade (Skills)</label>
-                        <StarRating
-                          value={newPlayer.skills}
-                          onChange={(v) => setNewPlayer({ ...newPlayer, skills: v })}
-                        />
-                      </div>
-                      <div className="star-form-item star-form-overall">
-                        <label><Star size={14} /> Overall (calculado)</label>
-                        <StarRating
-                          value={computeOverall(newPlayer)}
-                          readonly
-                          size={22}
-                        />
-                      </div>
-                    </div>
+                    )}
 
-                    <p className="hint-text">⚖ Peso em IMC: 1★ abaixo de 18.5 · 2★ 18.5–24.9 · 3★ 25–27.9 · 4★ 28–30 · 5★ &gt;30 (musculoso = 3★)</p>
+                    {newPlayer.guest ? (
+                      <p className="hint-text">🎟 Convidado sem avaliação — overall padrão de 3★ e ele <strong>não entra</strong> no balanceamento dos times.</p>
+                    ) : (
+                      <p className="hint-text">⚖ Peso em IMC: 1★ abaixo de 18.5 · 2★ 18.5–24.9 · 3★ 25–27.9 · 4★ 28–30 · 5★ &gt;30 (musculoso = 3★)</p>
+                    )}
 
                     <button type="submit" className="btn-action btn-primary-glow" style={{ width: '100%', justifyContent: 'center', marginTop: '12px' }}>
                       <Plus size={16} /> Salvar Jogador
@@ -1221,12 +1415,12 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
                 <div className="glass-card">
                   <div className="players-roster-header">
                     <h3>Lista de Confirmados na Pelada</h3>
-                    <span className="roster-count">Presentes hoje: <strong>{players.filter(p => p.playing !== false).length}</strong> / {players.length}</span>
+                    <span className="roster-count">Presentes hoje: <strong>{presentCount}</strong> / {players.length}{guestPlayers.length > 0 && ` · 🎟 ${guestPlayers.length} convidado(s)`}</span>
                   </div>
 
                   <div className="players-grid-view">
                     {players.map((p) => (
-                      <div key={p.id} className={`player-item-card ${p.playing === false ? 'player-absent' : ''}`}>
+                      <div key={p.id} className={`player-item-card ${p.playing === false ? 'player-absent' : ''} ${p.guest ? 'player-guest' : ''}`}>
                         <div className="player-info-meta">
                           <div className={`player-ovr-badge ${p.overall >= 4 ? 'gold' : ''}`}>
                             {'★'.repeat(p.overall)}
@@ -1234,10 +1428,16 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
                           <div className="player-details">
                             <h4>{p.name}{p.playing === false ? ' (ausente)' : ''}</h4>
                             <div className="player-sub-tags">
-                              <span className="tag-pos">{p.pos}{p.altPos ? ` / ${p.altPos}` : ''}</span>
-                              <span className="tag-weight">⚖{p.weight}★</span>
-                              <span className="tag-pace">💨{p.movement}★</span>
-                              <span className="tag-skills">⚡{p.skills}★</span>
+                              {p.guest ? (
+                                <span className="tag-guest">🎟 GUEST{p.invitedBy ? ` · ${players.find(x => x.id === p.invitedBy)?.name || 'sem convite'}` : ' · sem convite'}</span>
+                              ) : (
+                                <>
+                                  <span className="tag-pos">{p.pos}{p.altPos ? ` / ${p.altPos}` : ''}</span>
+                                  <span className="tag-weight">⚖{p.weight}★</span>
+                                  <span className="tag-pace">💨{p.movement}★</span>
+                                  <span className="tag-skills">⚡{p.skills}★</span>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1315,6 +1515,29 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
                           <option value="FWD">FWD</option>
                         </select>
                       </div>
+                      <div className="input-field" style={{ marginBottom: '10px' }}>
+                        <label>🎟 Convidado? (sem informação de jogo)</label>
+                        <button
+                          type="button"
+                          className={`btn-toggle ${editingPlayer.guest ? 'active' : ''}`}
+                          onClick={() => setEditingPlayer({ ...editingPlayer, guest: !editingPlayer.guest, invitedBy: editingPlayer.guest ? editingPlayer.invitedBy : '' })}
+                        >
+                          {editingPlayer.guest ? '🎟 Sim, é um convidado' : '🎟 Convidado (sem avaliação)'}
+                        </button>
+                        {editingPlayer.guest && (
+                          <select
+                            value={editingPlayer.invitedBy || ''}
+                            onChange={(e) => setEditingPlayer({ ...editingPlayer, invitedBy: e.target.value })}
+                            style={{ marginTop: '8px' }}
+                          >
+                            <option value="">Sem convite — vai para o último time que precisar</option>
+                            {players.filter(p => p.id !== editingPlayer.id && !p.guest).map((p) => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      {!editingPlayer.guest && (
                       <div className="star-form-grid">
                         <div className="star-form-item">
                           <label><Scale size={14} /> Peso</label>
@@ -1333,7 +1556,12 @@ export default function SortearTimes({ user, onNavigate, onLogout }) {
                           <StarRating value={computeOverall(editingPlayer)} readonly size={22} />
                         </div>
                       </div>
-                      <p className="hint-text">⚖ Peso em IMC: 1★ abaixo de 18.5 · 2★ 18.5–24.9 · 3★ 25–27.9 · 4★ 28–30 · 5★ &gt;30 (musculoso = 3★)</p>
+                      )}
+                      {editingPlayer.guest ? (
+                        <p className="hint-text">🎟 Convidado sem avaliação — overall padrão de 3★ e ele <strong>não entra</strong> no balanceamento dos times.</p>
+                      ) : (
+                        <p className="hint-text">⚖ Peso em IMC: 1★ abaixo de 18.5 · 2★ 18.5–24.9 · 3★ 25–27.9 · 4★ 28–30 · 5★ &gt;30 (musculoso = 3★)</p>
+                      )}
                     </div>
                     <button className="btn-action btn-primary-glow" style={{ width: '100%', justifyContent: 'center', marginTop: '12px' }} onClick={handleSaveEdit}>
                       <Check size={16} /> Salvar Alterações

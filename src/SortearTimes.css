@@ -563,6 +563,20 @@ html, body, #root {
   font-weight: 600;
 }
 
+.tag-guest {
+  background: rgba(247, 208, 112, 0.15);
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: #f7d070;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.player-item-card.player-guest {
+  border-color: rgba(247, 208, 112, 0.35);
+}
+
 .player-item-actions {
   display: flex;
   gap: 6px;
@@ -1869,6 +1883,14 @@ html, body, #root {
   font-weight: 600;
   color: #f8fafc;
   line-height: 1.35;
+}
+
+.share-guest-tag {
+  color: #f7d070;
+  font-weight: 800;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .share-player span {
